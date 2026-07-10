@@ -1,0 +1,44 @@
+services:
+  # Render Web Service for Node.js + Socket.io
+  - type: web
+    name: duo-chat-backend
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 5000
+      - key: JWT_SECRET
+        generateValue: true
+      - key: DB_HOST
+        fromDatabase:
+          name: duo-chat-db
+          property: host
+      - key: DB_USER
+        fromDatabase:
+          name: duo-chat-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: duo-chat-db
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: duo-chat-db
+          property: database
+      - key: DB_PORT
+        fromDatabase:
+          name: duo-chat-db
+          property: port
+      - key: RENDER_URL
+        value: https://duo-chat-backend.onrender.com # Change to actual service name
+
+databases:
+  # Render Managed MySQL Database
+  - name: duo-chat-db
+    databaseName: chatapp
+    user: root
+    plan: free
