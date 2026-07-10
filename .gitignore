@@ -1,0 +1,11 @@
+node_modules/
+**/node_modules/
+.env
+**/.env
+backend/.env
+frontend/node_modules/
+android/app/src/config/firebase-service-account.json
+.expo/
+build/
+dist/
+*.log
