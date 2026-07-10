@@ -74,15 +74,20 @@ const CallHistoryScreen = ({ navigation }) => {
 
   const handleCallBack = useCallback((call) => {
     const type = call.type;
-    navigation.navigate('ActiveCall', {
-      targetId: isOutgoing(call) ? call.receiverId : call.callerId,
-      targetName: isOutgoing(call)
-        ? call.receiver?.username
-        : call.caller?.username,
+    const targetId = isOutgoing(call) ? call.receiverId : call.callerId;
+    const targetName = isOutgoing(call)
+      ? call.receiver?.username || 'User'
+      : call.caller?.username || 'User';
+
+    navigation.navigate('IncomingCall', {
+      callerId: user?.id,
+      callerName: user?.username,
       type,
       isOutgoing: true,
+      targetId,
+      targetName,
     });
-  }, []);
+  }, [user]);
 
   const renderCall = ({ item }) => {
     const outgoing = isOutgoing(item);

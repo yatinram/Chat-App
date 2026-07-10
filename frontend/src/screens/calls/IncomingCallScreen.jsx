@@ -27,6 +27,7 @@ const IncomingCallScreen = ({ navigation, route }) => {
   const isOutgoing = params.isOutgoing || false;
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const scaleMultiplier = useRef(new Animated.Value(0.88)).current;
   const { incomingCall, clearIncomingCall } = useCallStore();
   const { user, otherUser } = useAuthStore();
 
@@ -128,11 +129,6 @@ const IncomingCallScreen = ({ navigation, route }) => {
         callerId: incomingCall.callerId,
         callId: incomingCall.callId,
       });
-      callApi.createCallRecord({
-        receiverId: user?.id,
-        type: incomingCall.type,
-        status: 'rejected',
-      }).catch(() => {});
       clearIncomingCall();
     }
     navigation.goBack();
@@ -177,7 +173,7 @@ const IncomingCallScreen = ({ navigation, route }) => {
             {
               transform: [
                 {
-                  scale: Animated.multiply(pulseAnim, new Animated.Value(0.88)),
+                  scale: Animated.multiply(pulseAnim, scaleMultiplier),
                 },
               ],
             },

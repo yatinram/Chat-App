@@ -182,7 +182,7 @@ const webrtcService = {
     }
   },
 
-  getLocalStream: () => localStream,
+  getLocalStreamInstance: () => localStream,
   getPeerConnection: () => peerConnection,
 };
 

@@ -30,7 +30,7 @@ const syncDatabase = async () => {
   try {
     await sequelize.authenticate();
     console.log('✅ Database connected successfully');
-    await sequelize.sync({ alter: true });
+    await sequelize.sync(process.env.NODE_ENV === 'production' ? {} : { alter: true });
     console.log('✅ Database synchronized');
   } catch (error) {
     console.error('❌ Database sync failed:', error);

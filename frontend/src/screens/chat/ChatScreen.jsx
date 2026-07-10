@@ -29,6 +29,8 @@ import TypingIndicator from '../../components/chat/TypingIndicator';
 import ReplyPreview from '../../components/chat/ReplyPreview';
 import DateSeparator from '../../components/chat/DateSeparator';
 import dayjs from 'dayjs';
+import relativeTime from 'dayjs/plugin/relativeTime';
+dayjs.extend(relativeTime);
 
 /**
  * ChatScreen — main conversation screen
@@ -50,6 +52,7 @@ const ChatScreen = ({ navigation }) => {
 
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const flatListRef = useRef(null);
+  const prevMessagesCount = useRef(0);
 
   // Set up all socket listeners
   useSocket();
@@ -100,10 +103,19 @@ const ChatScreen = ({ navigation }) => {
 
   // Auto scroll to bottom on new messages
   useEffect(() => {
-    if (messages.length > 0) {
-      setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+    const newCount = messages.length;
+    const oldCount = prevMessagesCount.current;
+    prevMessagesCount.current = newCount;
+
+    if (newCount > 0) {
+      const lastMessage = messages[messages.length - 1];
+      const isNewMessageAtBottom = oldCount > 0 && lastMessage && (lastMessage.senderId === user?.id || newCount === oldCount + 1);
+      
+      if (oldCount === 0 || isNewMessageAtBottom) {
+        setTimeout(() => {
+          flatListRef.current?.scrollToEnd({ animated: true });
+        }, 100);
+      }
     }
   }, [messages.length]);
 
@@ -129,12 +141,12 @@ const ChatScreen = ({ navigation }) => {
       if (item.type === 'separator') {
         return <DateSeparator date={item.date} />;
       }
-      const isSelf = item.senderId === user.id;
+      const isSelf = item.senderId === user?.id;
       return (
         <MessageBubble
           message={item}
           isSelf={isSelf}
-          currentUserId={user.id}
+          currentUserId={user?.id}
           receiverId={otherUser?.id}
           onReply={setReplyTo}
         />

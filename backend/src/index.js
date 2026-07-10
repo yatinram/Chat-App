@@ -1,4 +1,11 @@
 require('dotenv').config();
+
+// Validate critical environment variables
+if (!process.env.JWT_SECRET) {
+  console.error('❌ CRITICAL ERROR: JWT_SECRET environment variable is missing.');
+  process.exit(1);
+}
+
 const express = require('express');
 const http = require('http');
 const socketIo = require('socket.io');
@@ -17,10 +24,26 @@ const uploadRoutes = require('./routes/uploadRoutes');
 const app = express();
 const server = http.createServer(app);
 
+// CORS whitelist configuration
+const allowedOrigins = process.env.ALLOWED_ORIGINS 
+  ? process.env.ALLOWED_ORIGINS.split(',') 
+  : ['*'];
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true,
+};
+
 // Initialize Socket.io
 const io = socketIo(server, {
   cors: {
-    origin: '*',
+    origin: process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
   },
   pingInterval: 10000, // keep-alive ping intervals
@@ -28,9 +51,9 @@ const io = socketIo(server, {
 });
 
 // Middleware
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 // Global Rate Limiter
 const limiter = rateLimit({

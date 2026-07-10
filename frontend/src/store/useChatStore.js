@@ -23,6 +23,8 @@ const useChatStore = create((set, get) => ({
           nextCursor: res.nextCursor,
           isLoading: false,
         });
+      } else {
+        set({ isLoading: false, error: res.message || 'Failed to load messages' });
       }
     } catch (err) {
       set({ isLoading: false, error: 'Failed to load messages' });

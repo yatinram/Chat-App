@@ -6,6 +6,10 @@ import {
   TouchableWithoutFeedback,
   StyleSheet,
   Alert,
+  Modal,
+  TextInput,
+  Keyboard,
+  Platform,
 } from 'react-native';
 import dayjs from 'dayjs';
 import Colors from '../../constants/colors';
@@ -28,7 +32,28 @@ const MessageBubble = ({
   onReply,
 }) => {
   const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editText, setEditText] = useState(message.content || '');
   const { updateMessage, deleteMessageLocally } = useChatStore();
+
+  const handleSaveEdit = async () => {
+    if (!editText.trim() || editText.trim() === message.content) {
+      setEditModalVisible(false);
+      return;
+    }
+    try {
+      await messageApi.editMessage(message.id, editText.trim());
+      updateMessage(message.id, { content: editText.trim(), isEdited: true });
+      socketService.emit(SOCKET_EVENTS.MESSAGE_EDIT, {
+        messageId: message.id,
+        receiverId,
+        content: editText.trim(),
+      });
+      setEditModalVisible(false);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to edit message');
+    }
+  };
 
   const timeLabel = dayjs(message.createdAt).format('h:mm A');
   const myReaction = message.reactions?.[currentUserId] || null;
@@ -82,26 +107,8 @@ const MessageBubble = ({
           break;
 
         case 'Edit':
-          Alert.prompt(
-            'Edit Message',
-            '',
-            async (newContent) => {
-              if (!newContent?.trim() || newContent === message.content) return;
-              try {
-                await messageApi.editMessage(message.id, newContent.trim());
-                updateMessage(message.id, { content: newContent.trim(), isEdited: true });
-                socketService.emit(SOCKET_EVENTS.MESSAGE_EDIT, {
-                  messageId: message.id,
-                  receiverId,
-                  content: newContent.trim(),
-                });
-              } catch (err) {
-                Alert.alert('Error', 'Failed to edit message');
-              }
-            },
-            'plain-text',
-            message.content,
-          );
+          setEditText(message.content || '');
+          setEditModalVisible(true);
           break;
 
         case 'React':
@@ -230,8 +237,8 @@ const MessageBubble = ({
               style={[styles.reactionsRow, isSelf ? styles.reactionsRowSelf : styles.reactionsRowOther]}
               onPress={() => setShowReactionPicker(true)}
             >
-              {[...new Set(allReactions)].map((emoji, i) => (
-                <Text key={i} style={styles.reactionEmoji}>
+              {[...new Set(allReactions)].map((emoji) => (
+                <Text key={emoji} style={styles.reactionEmoji}>
                   {emoji}
                 </Text>
               ))}
@@ -249,6 +256,47 @@ const MessageBubble = ({
         onClose={() => setShowReactionPicker(false)}
         currentReaction={myReaction}
       />
+
+      {/* Edit Message Modal */}
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <TouchableWithoutFeedback onPress={() => setEditModalVisible(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+              <View style={styles.editCard}>
+                <Text style={styles.editTitle}>Edit Message</Text>
+                <TextInput
+                  style={styles.editInput}
+                  value={editText}
+                  onChangeText={setEditText}
+                  multiline
+                  placeholder="Edit your message..."
+                  placeholderTextColor={Colors.textMuted}
+                  autoFocus
+                />
+                <View style={styles.editActions}>
+                  <TouchableOpacity
+                    style={styles.editCancelBtn}
+                    onPress={() => setEditModalVisible(false)}
+                  >
+                    <Text style={styles.editCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.editSaveBtn}
+                    onPress={handleSaveEdit}
+                  >
+                    <Text style={styles.editSaveText}>Save</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
     </>
   );
 };
@@ -376,6 +424,72 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.textSecondary,
     marginLeft: 2,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  editCard: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: Colors.bgSurface,
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+  },
+  editTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 12,
+  },
+  editInput: {
+    backgroundColor: Colors.bgSurface2,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
+    color: Colors.textPrimary,
+    fontSize: 14.5,
+    minHeight: 80,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: 16,
+  },
+  editActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  editCancelBtn: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  editCancelText: {
+    color: Colors.textSecondary,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  editSaveBtn: {
+    backgroundColor: Colors.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+  },
+  editSaveText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 

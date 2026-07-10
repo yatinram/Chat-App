@@ -47,10 +47,14 @@ const handleSocketConnection = (io) => {
     // 1. send_message
     socket.on('send_message', async (data, callback) => {
       try {
-        const { receiverId, type, content, mediaUrl, mediaName, mediaMimeType, mediaSize, repliedToId } = data;
+        const { receiverId: rawReceiverId, type, content, mediaUrl, mediaName, mediaMimeType, mediaSize, repliedToId } = data;
+        const receiverId = parseInt(rawReceiverId);
 
         if (!receiverId) {
-          return callback({ success: false, message: 'Receiver ID is required' });
+          if (typeof callback === 'function') {
+            return callback({ success: false, message: 'Receiver ID is required' });
+          }
+          return;
         }
 
         // Create the message row in Sequelize
@@ -121,16 +125,21 @@ const handleSocketConnection = (io) => {
         }
 
         // Return the created message back to sender socket
-        callback({ success: true, message: messageData });
+        if (typeof callback === 'function') {
+          callback({ success: true, message: messageData });
+        }
       } catch (err) {
         console.error('Socket send_message error:', err);
-        callback({ success: false, message: 'Failed to send message' });
+        if (typeof callback === 'function') {
+          callback({ success: false, message: 'Failed to send message' });
+        }
       }
     });
 
     // 2. typing & stop_typing
     socket.on('typing', (data) => {
-      const { receiverId } = data;
+      if (!data || !data.receiverId) return;
+      const receiverId = parseInt(data.receiverId);
       const receiverSockets = onlineUsers.get(receiverId);
       if (receiverSockets) {
         receiverSockets.forEach(sid => {
@@ -140,7 +149,8 @@ const handleSocketConnection = (io) => {
     });
 
     socket.on('stop_typing', (data) => {
-      const { receiverId } = data;
+      if (!data || !data.receiverId) return;
+      const receiverId = parseInt(data.receiverId);
       const receiverSockets = onlineUsers.get(receiverId);
       if (receiverSockets) {
         receiverSockets.forEach(sid => {
@@ -152,7 +162,9 @@ const handleSocketConnection = (io) => {
     // 3. message_seen
     socket.on('message_seen', async (data) => {
       try {
-        const { messageId, senderId } = data; // messageId is of the message that was seen
+        if (!data || !data.messageId || !data.senderId) return;
+        const { messageId, senderId: rawSenderId } = data; // messageId is of the message that was seen
+        const senderId = parseInt(rawSenderId);
         
         await Message.update(
           { status: 'seen' },
@@ -172,47 +184,84 @@ const handleSocketConnection = (io) => {
     });
 
     // 4. message_edit
-    socket.on('message_edit', (data) => {
-      const { messageId, receiverId, content } = data;
-      const receiverSockets = onlineUsers.get(receiverId);
-      if (receiverSockets) {
-        receiverSockets.forEach(sid => {
-          io.to(sid).emit('message_edit', { messageId, content });
-        });
+    socket.on('message_edit', async (data) => {
+      try {
+        if (!data || !data.messageId || !data.content) return;
+        const { messageId, receiverId: rawReceiverId, content } = data;
+        const receiverId = parseInt(rawReceiverId);
+        
+        const message = await Message.findByPk(messageId);
+        if (message && message.senderId === userId && message.type === 'text') {
+          await message.update({ content, isEdited: true });
+          
+          const receiverSockets = onlineUsers.get(receiverId);
+          if (receiverSockets) {
+            receiverSockets.forEach(sid => {
+              io.to(sid).emit('message_edit', { messageId, content });
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Socket message_edit error:', err);
       }
     });
 
     // 5. message_delete
-    socket.on('message_delete', (data) => {
-      const { messageId, receiverId, scope } = data; // scope: 'me' or 'both'
-      
-      // If deleting for everyone, notify the receiver
-      if (scope === 'both') {
-        const receiverSockets = onlineUsers.get(receiverId);
-        if (receiverSockets) {
-          receiverSockets.forEach(sid => {
-            io.to(sid).emit('message_delete', { messageId, scope });
+    socket.on('message_delete', async (data) => {
+      try {
+        if (!data || !data.messageId || !data.scope) return;
+        const { messageId, receiverId: rawReceiverId, scope } = data; // scope: 'me' or 'both'
+        const receiverId = parseInt(rawReceiverId);
+        
+        const message = await Message.findByPk(messageId);
+        if (!message) return;
+        
+        const isSender = message.senderId === userId;
+        
+        if (scope === 'both') {
+          if (!isSender) return; // Only sender can delete for both
+          await message.update({ deletedFor: 'both', isDeleted: true, content: null, mediaUrl: null });
+          
+          // Notify the receiver
+          const receiverSockets = onlineUsers.get(receiverId);
+          if (receiverSockets) {
+            receiverSockets.forEach(sid => {
+              io.to(sid).emit('message_delete', { messageId, scope });
+            });
+          }
+        } else {
+          // delete for me only
+          const targetDelete = isSender ? 'sender' : 'receiver';
+          await message.update({
+            deletedFor: message.deletedFor === 'both' ? 'both' : targetDelete,
           });
         }
-      }
 
-      // Sync across other connections of the same user (if logged in on multiple devices)
-      const senderSockets = onlineUsers.get(userId);
-      if (senderSockets) {
-        senderSockets.forEach(sid => {
-          if (sid !== socket.id) {
-            io.to(sid).emit('message_delete', { messageId, scope });
-          }
-        });
+        // Sync across other connections of the same user (if logged in on multiple devices)
+        const senderSockets = onlineUsers.get(userId);
+        if (senderSockets) {
+          senderSockets.forEach(sid => {
+            if (sid !== socket.id) {
+              io.to(sid).emit('message_delete', { messageId, scope });
+            }
+          });
+        }
+      } catch (err) {
+        console.error('Socket message_delete error:', err);
       }
     });
 
     // 6. message_react
     socket.on('message_react', async (data, callback) => {
       try {
-        const { messageId, receiverId, emoji } = data;
+        if (!data) return;
+        const { messageId, receiverId: rawReceiverId, emoji } = data;
+        const receiverId = parseInt(rawReceiverId);
         const msg = await Message.findByPk(messageId);
-        if (!msg) return callback({ success: false, message: 'Message not found' });
+        if (!msg) {
+          if (typeof callback === 'function') callback({ success: false, message: 'Message not found' });
+          return;
+        }
 
         const currentReactions = msg.reactions || {};
         if (emoji) {
@@ -241,10 +290,14 @@ const handleSocketConnection = (io) => {
           });
         }
 
-        callback({ success: true, reactions: currentReactions });
+        if (typeof callback === 'function') {
+          callback({ success: true, reactions: currentReactions });
+        }
       } catch (err) {
         console.error('Message reaction error:', err);
-        callback({ success: false, message: 'Failed to react' });
+        if (typeof callback === 'function') {
+          callback({ success: false, message: 'Failed to react' });
+        }
       }
     });
 
@@ -253,7 +306,9 @@ const handleSocketConnection = (io) => {
     // 1. call_initiate (outgoing call start, send FCM notification to target if offline, send signal if online)
     socket.on('call_initiate', async (data, callback) => {
       try {
-        const { receiverId, type, callId } = data; // type: 'voice' | 'video'
+        if (!data) return;
+        const { receiverId: rawReceiverId, type, callId } = data; // type: 'voice' | 'video'
+        const receiverId = parseInt(rawReceiverId);
         const isReceiverOnline = onlineUsers.has(receiverId) && onlineUsers.get(receiverId).size > 0;
         
         if (isReceiverOnline) {
@@ -266,7 +321,9 @@ const handleSocketConnection = (io) => {
               callId
             });
           });
-          callback({ success: true, online: true });
+          if (typeof callback === 'function') {
+            callback({ success: true, online: true });
+          }
         } else {
           // Send high-priority calling FCM notification to wake up the app
           const receiverUser = await User.findByPk(receiverId);
@@ -279,17 +336,23 @@ const handleSocketConnection = (io) => {
               { callerId: `${userId}` }
             );
           }
-          callback({ success: true, online: false });
+          if (typeof callback === 'function') {
+            callback({ success: true, online: false });
+          }
         }
       } catch (err) {
         console.error('Call initiate error:', err);
-        callback({ success: false, message: 'Call setup failed' });
+        if (typeof callback === 'function') {
+          callback({ success: false, message: 'Call setup failed' });
+        }
       }
     });
 
     // 2. call_accept
     socket.on('call_accept', (data) => {
-      const { callerId, callId } = data;
+      if (!data) return;
+      const { callerId: rawCallerId, callId } = data;
+      const callerId = parseInt(rawCallerId);
       const callerSockets = onlineUsers.get(callerId);
       if (callerSockets) {
         callerSockets.forEach(sid => {
@@ -300,7 +363,9 @@ const handleSocketConnection = (io) => {
 
     // 3. call_reject
     socket.on('call_reject', (data) => {
-      const { callerId, callId } = data;
+      if (!data) return;
+      const { callerId: rawCallerId, callId } = data;
+      const callerId = parseInt(rawCallerId);
       const callerSockets = onlineUsers.get(callerId);
       if (callerSockets) {
         callerSockets.forEach(sid => {
@@ -311,7 +376,9 @@ const handleSocketConnection = (io) => {
 
     // 4. call_webrtc_signal (relays SDP offer/answer or ICE candidate)
     socket.on('call_webrtc_signal', (data) => {
-      const { targetId, signal } = data; // targetId is who we are sending this WebRTC message to
+      if (!data) return;
+      const { targetId: rawTargetId, signal } = data; // targetId is who we are sending this WebRTC message to
+      const targetId = parseInt(rawTargetId);
       const targetSockets = onlineUsers.get(targetId);
       if (targetSockets) {
         targetSockets.forEach(sid => {
@@ -325,7 +392,9 @@ const handleSocketConnection = (io) => {
 
     // 5. call_end
     socket.on('call_end', (data) => {
-      const { targetId, callId } = data;
+      if (!data) return;
+      const { targetId: rawTargetId, callId } = data;
+      const targetId = parseInt(rawTargetId);
       const targetSockets = onlineUsers.get(targetId);
       if (targetSockets) {
         targetSockets.forEach(sid => {

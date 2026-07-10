@@ -83,6 +83,10 @@ const useAuthStore = create((set, get) => ({
         notificationService.initNotifications(true).catch(() => { });
 
         return { success: true };
+      } else {
+        const errMsg = res?.message || 'Login failed';
+        set({ isLoading: false, error: errMsg });
+        return { success: false, message: errMsg };
       }
     } catch (err) {
       const message = err.response?.data?.message || 'Login failed';

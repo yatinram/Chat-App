@@ -34,16 +34,6 @@ axiosInstance.interceptors.response.use(
     return Promise.reject(error);
   },
 );
-axiosInstance.interceptors.request.use(
-  async (config) => {
-    const token = await storageService.getToken();
-    console.log('🔑 Token being sent:', token); // ← add this
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error),
-);
+
 
 export default axiosInstance;
